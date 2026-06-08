@@ -1,64 +1,70 @@
-import { CATEGORIES, CROP_EFFECTS, MOCK_ORDERS, MOCK_REVIEWS, PRODUCTS } from '../data/mockData'
 import type { CartItem, Category, CropEffect, Order, Product, Review, SocialProvider, User } from '../types/fertilizer'
 
-const delay = (ms = 300) => new Promise((res) => setTimeout(res, ms))
+const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
+
+let _token: string | null = null
+
+const authHeaders = (): Record<string, string> =>
+  _token ? { Authorization: `Bearer ${_token}` } : {}
+
+const get = async <T>(path: string, auth = false): Promise<T> => {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: auth ? authHeaders() : {},
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+const post = async <T>(path: string, body: unknown, auth = false): Promise<T> => {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(auth ? authHeaders() : {}) },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
 
 export const fertilizerApi = {
-  getCategories: async (): Promise<Category[]> => {
-    await delay()
-    return CATEGORIES
-  },
+  getCategories: (): Promise<Category[]> =>
+    get('/categories'),
 
-  getProducts: async (): Promise<Product[]> => {
-    await delay()
-    return PRODUCTS
-  },
+  getProducts: (): Promise<Product[]> =>
+    get('/products'),
 
-  getProduct: async (id: string): Promise<Product | undefined> => {
-    await delay()
-    return PRODUCTS.find((p) => p.id === id)
-  },
+  getProduct: (id: string): Promise<Product> =>
+    get(`/products/${id}`),
 
-  getReviews: async (productId: string): Promise<Review[]> => {
-    await delay(200)
-    return MOCK_REVIEWS[productId] ?? []
-  },
+  getReviews: (productId: string): Promise<Review[]> =>
+    get(`/products/${productId}/reviews`),
 
-  getOrders: async (): Promise<Order[]> => {
-    await delay()
-    return MOCK_ORDERS
-  },
+  getCropEffects: (): Promise<CropEffect[]> =>
+    get('/crop-effects'),
 
-  getCropEffects: async (): Promise<CropEffect[]> => {
-    await delay()
-    return CROP_EFFECTS
-  },
+  getOrders: (): Promise<Order[]> =>
+    get('/orders', true),
 
-  loginWithEmail: async (_email: string, _password: string): Promise<User> => {
-    await delay(600)
-    return { id: 'u-1', name: '홍길동', email: _email, provider: 'email', membership: 'GOLD' }
+  loginWithEmail: async (email: string, password: string): Promise<User> => {
+    const data = await post<{ token: string; user: User }>('/auth/login', { email, password })
+    _token = data.token
+    return data.user
   },
 
   loginWithSocial: async (provider: SocialProvider): Promise<User> => {
-    await delay(600)
-    return { id: 'u-2', name: '소셜 사용자', email: `user@${provider}.test`, provider, membership: 'SILVER' }
+    const data = await post<{ token: string; user: User }>('/auth/social', { provider })
+    _token = data.token
+    return data.user
   },
 
   checkout: async (
     total: number,
-    _items: CartItem[],
-  ): Promise<{ orderId: string; total: number }> => {
-    await delay(800)
-    return { orderId: `ORD-${Date.now()}`, total }
-  },
+    items: CartItem[],
+  ): Promise<{ orderId: string; total: number }> =>
+    post('/orders', { total, items }, true),
 
   applyCoupon: async (
     code: string,
     total: number,
-  ): Promise<{ valid: boolean; discount: number; message: string }> => {
-    await delay(400)
-    if (code === 'FARM10') return { valid: true, discount: Math.floor(total * 0.1), message: '🌱 FARM10 쿠폰 적용! 10% 할인' }
-    if (code === 'GREEN5000') return { valid: true, discount: 5000, message: '✅ GREEN5000 쿠폰 적용! 5,000원 할인' }
-    return { valid: false, discount: 0, message: '유효하지 않은 쿠폰 코드입니다.' }
-  },
+  ): Promise<{ valid: boolean; discount: number; message: string }> =>
+    post('/coupons/apply', { code, total }),
 }
