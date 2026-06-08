@@ -20,14 +20,15 @@ const wishlist = ref<string[]>([])
 const user = ref<User | null>(null)
 const orders = ref<Order[]>([])
 const reviews = ref<Review[]>([])
-const email = ref('demo@farm.test')
-const password = ref('password123')
-const couponCode = ref('FARM10')
+const email = ref('demo@fertilizer.com')
+const password = ref('demo1234')
+const couponCode = ref('WELCOME10')
 const couponMessage = ref('')
 const discount = ref(0)
 const checkoutMessage = ref('')
 const isLoading = ref(false)
 const selectedCropId = ref<string>('')
+const error = ref<string | null>(null)
 
 const formatPrice = (value: number) => new Intl.NumberFormat('ko-KR').format(value)
 
@@ -109,18 +110,30 @@ const toggleWishlist = (productId: string) => {
 
 const loginEmail = async () => {
   isLoading.value = true
-  user.value = await fertilizerApi.loginWithEmail(email.value, password.value)
-  orders.value = await fertilizerApi.getOrders()
-  isLoading.value = false
-  move('account')
+  error.value = null
+  try {
+    user.value = await fertilizerApi.loginWithEmail(email.value, password.value)
+    orders.value = await fertilizerApi.getOrders()
+    move('account')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '로그인에 실패했습니다.'
+  } finally {
+    isLoading.value = false
+  }
 }
 
 const loginSocial = async (provider: SocialProvider) => {
   isLoading.value = true
-  user.value = await fertilizerApi.loginWithSocial(provider)
-  orders.value = await fertilizerApi.getOrders()
-  isLoading.value = false
-  move('account')
+  error.value = null
+  try {
+    user.value = await fertilizerApi.loginWithSocial(provider)
+    orders.value = await fertilizerApi.getOrders()
+    move('account')
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '소셜 로그인에 실패했습니다.'
+  } finally {
+    isLoading.value = false
+  }
 }
 
 const applyCoupon = async () => {
@@ -132,23 +145,37 @@ const applyCoupon = async () => {
 const checkout = async () => {
   if (!user.value) { move('login'); return }
   isLoading.value = true
-  const result = await fertilizerApi.checkout(orderTotal.value, cart.value)
-  checkoutMessage.value = `${result.orderId} 주문이 생성되었습니다.`
-  cart.value = []
-  discount.value = 0
-  isLoading.value = false
+  try {
+    const result = await fertilizerApi.checkout(orderTotal.value, cart.value)
+    checkoutMessage.value = `${result.orderId} 주문이 생성되었습니다.`
+    cart.value = []
+    discount.value = 0
+  } catch (e) {
+    checkoutMessage.value = e instanceof Error ? e.message : '주문에 실패했습니다.'
+  } finally {
+    isLoading.value = false
+  }
 }
 
 onMounted(async () => {
-  categories.value = await fertilizerApi.getCategories()
-  products.value = await fertilizerApi.getProducts()
-  cropEffects.value = await fertilizerApi.getCropEffects()
-  if (products.value[0]) {
-    selectedProductId.value = products.value[0].id
-    selectedOption.value = products.value[0].options[0]
-    reviews.value = await fertilizerApi.getReviews(products.value[0].id)
+  try {
+    const [cats, prods, crops] = await Promise.all([
+      fertilizerApi.getCategories(),
+      fertilizerApi.getProducts(),
+      fertilizerApi.getCropEffects(),
+    ])
+    categories.value = cats
+    products.value = prods
+    cropEffects.value = crops
+    if (prods[0]) {
+      selectedProductId.value = prods[0].id
+      selectedOption.value = prods[0].options[0]
+      reviews.value = await fertilizerApi.getReviews(prods[0].id)
+    }
+    if (crops[0]) selectedCropId.value = crops[0].cropId
+  } catch (e) {
+    error.value = '서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인하세요.'
   }
-  if (cropEffects.value[0]) selectedCropId.value = cropEffects.value[0].cropId
 })
 </script>
 
@@ -175,6 +202,11 @@ onMounted(async () => {
         </nav>
       </div>
     </header>
+
+    <!-- 서버 연결 오류 배너 -->
+    <div v-if="error" class="bg-red-50 px-4 py-3 text-center text-sm font-bold text-red-600">
+      ⚠️ {{ error }}
+    </div>
 
     <main class="mx-auto max-w-7xl px-4 py-8">
 
@@ -246,7 +278,7 @@ onMounted(async () => {
             </div>
           </article>
         </div>
-        <p v-if="filteredProducts.length === 0" class="rounded-3xl bg-white p-10 text-center text-slate-500 shadow-sm">검색 결과가 없습니다.</p>
+        <p v-if="filteredProducts.length === 0 && !error" class="rounded-3xl bg-white p-10 text-center text-slate-500 shadow-sm">검색 결과가 없습니다.</p>
       </section>
 
       <!-- ② 작물별 비료 찾기 -->
@@ -430,7 +462,7 @@ onMounted(async () => {
           </div>
         </div>
         <div class="flex gap-2">
-          <input v-model="couponCode" class="input" placeholder="쿠폰 코드 (FARM10, GREEN5000)" />
+          <input v-model="couponCode" class="input" placeholder="쿠폰 코드 (WELCOME10, SAVE5000, FARM2024)" />
           <button class="secondary-btn whitespace-nowrap" @click="applyCoupon">쿠폰 적용</button>
         </div>
         <p v-if="couponMessage" class="text-sm font-bold text-brand-700">{{ couponMessage }}</p>
@@ -439,7 +471,7 @@ onMounted(async () => {
           <strong class="text-2xl">{{ formatPrice(orderTotal) }}원</strong>
         </div>
         <button class="primary-btn w-full" :disabled="isLoading || !cartDetails.length" @click="checkout">
-          {{ isLoading ? '처리 중...' : '목업 결제하기' }}
+          {{ isLoading ? '처리 중...' : '결제하기' }}
         </button>
         <p v-if="checkoutMessage" class="rounded-2xl bg-green-50 p-4 font-bold text-green-700">{{ checkoutMessage }}</p>
       </section>
@@ -448,11 +480,12 @@ onMounted(async () => {
       <section v-if="page === 'login'" class="mx-auto grid max-w-5xl gap-8 lg:grid-cols-2">
         <div class="rounded-[2rem] bg-white p-8 shadow-soft">
           <h2 class="text-3xl font-black">이메일 로그인</h2>
-          <p class="mt-2 text-slate-500">목업 로그인입니다. 어떤 이메일/비밀번호든 로그인됩니다.</p>
+          <p class="mt-2 text-slate-500">시드 계정: demo@fertilizer.com / demo1234</p>
           <div class="mt-6 space-y-3">
             <input v-model="email" class="input" type="email" placeholder="이메일" />
             <input v-model="password" class="input" type="password" placeholder="비밀번호" />
             <button class="primary-btn w-full" :disabled="isLoading" @click="loginEmail">로그인</button>
+            <p v-if="error" class="text-sm font-bold text-red-600">{{ error }}</p>
           </div>
           <div class="mt-5 flex justify-between text-sm font-bold text-brand-700">
             <button>회원가입</button><button>비밀번호 찾기</button>
@@ -460,7 +493,7 @@ onMounted(async () => {
         </div>
         <div class="rounded-[2rem] bg-slate-900 p-8 text-white shadow-soft">
           <h2 class="text-3xl font-black">소셜 로그인</h2>
-          <p class="mt-2 text-slate-300">목업 소셜 로그인. 실제 OAuth 없이 바로 로그인됩니다.</p>
+          <p class="mt-2 text-slate-300">소셜 로그인 시 임시 계정이 자동 생성됩니다.</p>
           <div class="mt-6 space-y-3">
             <button class="social-btn bg-white text-slate-900" @click="loginSocial('google')">Google로 계속하기</button>
             <button class="social-btn bg-[#FEE500] text-slate-900" @click="loginSocial('kakao')">Kakao로 계속하기</button>
@@ -484,6 +517,7 @@ onMounted(async () => {
               <p class="mt-1 text-sm text-slate-500">{{ order.createdAt }} · {{ formatPrice(order.total) }}원</p>
               <p class="mt-2 text-sm">{{ order.items.map((item) => `${item.productName} ${item.quantity}개`).join(', ') }}</p>
             </article>
+            <p v-if="!orders.length" class="mt-4 text-sm text-slate-500">주문 내역이 없습니다.</p>
           </div>
           <div class="rounded-3xl bg-white p-6 shadow-sm">
             <h3 class="text-xl font-black">찜한 상품</h3>
@@ -503,7 +537,7 @@ onMounted(async () => {
 
     <footer class="mt-16 border-t border-slate-200 bg-white py-8 text-center text-sm text-slate-400">
       <p class="font-bold text-slate-600">비료 쇼핑몰</p>
-      <p class="mt-1">목업 데이터로 구성된 프론트엔드 데모입니다. 백엔드 연동 전 화면 검증용입니다.</p>
+      <p class="mt-1">백엔드 API: {{ (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api') }}</p>
     </footer>
   </div>
 </template>
