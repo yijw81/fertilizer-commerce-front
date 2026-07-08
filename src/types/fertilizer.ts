@@ -12,6 +12,11 @@ export interface NutrientInfo {
   k: number  // 칼륨 %
 }
 
+export interface ProductOption {
+  label: string
+  priceAdjustment: number  // 기본가 대비 가감 금액, 음수 가능
+}
+
 export interface Product {
   id: string
   name: string
@@ -25,7 +30,7 @@ export interface Product {
   badges: string[]
   image: string
   description: string
-  options: string[]
+  options: ProductOption[]
   nutrients: NutrientInfo
   applicationMethod: string
   targetCrops: string[]
@@ -34,7 +39,7 @@ export interface Product {
 export interface CartItem {
   productId: string
   quantity: number
-  option: string
+  optionLabel: string  // ProductOption.label
 }
 
 export interface User {
@@ -60,6 +65,16 @@ export interface Review {
   rating: number
   content: string
   createdAt: string
+}
+
+export interface Address {
+  id: string
+  label: string
+  receiverName: string
+  phone: string
+  address: string
+  detailAddress: string
+  isDefault: boolean
 }
 
 export interface CropEffect {

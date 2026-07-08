@@ -1,64 +1,113 @@
-import { CATEGORIES, CROP_EFFECTS, MOCK_ORDERS, MOCK_REVIEWS, PRODUCTS } from '../data/mockData'
-import type { CartItem, Category, CropEffect, Order, Product, Review, SocialProvider, User } from '../types/fertilizer'
+import type { Address, CartItem, Category, CropEffect, Order, Product, Review, SocialProvider, User } from '../types/fertilizer'
+import { api, tokenStore } from './api'
 
-const delay = (ms = 300) => new Promise((res) => setTimeout(res, ms))
+const PENDING_CART_KEY = 'fertilizer_pending_cart'
+
+interface PendingPayment {
+  cart: CartItem[]
+  discount: number
+  orderTotal: number
+}
+
+export const pendingPaymentStore = {
+  save: (data: PendingPayment) => localStorage.setItem(PENDING_CART_KEY, JSON.stringify(data)),
+  load: (): PendingPayment | null => {
+    const raw = localStorage.getItem(PENDING_CART_KEY)
+    return raw ? (JSON.parse(raw) as PendingPayment) : null
+  },
+  clear: () => localStorage.removeItem(PENDING_CART_KEY),
+}
 
 export const fertilizerApi = {
-  getCategories: async (): Promise<Category[]> => {
-    await delay()
-    return CATEGORIES
+  getCategories: (): Promise<Category[]> => api.get('/categories'),
+
+  getProducts: (): Promise<Product[]> => api.get('/products'),
+
+  getProduct: (id: string): Promise<Product> => api.get(`/products/${id}`),
+
+  getReviews: (productId: string): Promise<Review[]> => api.get(`/products/${productId}/reviews`),
+
+  getOrders: (): Promise<Order[]> => {
+    if (tokenStore.get()) {
+      return api.get<Order[]>('/orders')
+    }
+    return Promise.resolve([])
   },
 
-  getProducts: async (): Promise<Product[]> => {
-    await delay()
-    return PRODUCTS
+  getCropEffects: (): Promise<CropEffect[]> => api.get('/crop-effects'),
+
+  register: async (name: string, email: string, password: string): Promise<User> => {
+    const res = await api.post<{ token: string; user: User }>('/auth/register', { name, email, password })
+    tokenStore.set(res.token)
+    return res.user
   },
 
-  getProduct: async (id: string): Promise<Product | undefined> => {
-    await delay()
-    return PRODUCTS.find((p) => p.id === id)
-  },
+  forgotPassword: (email: string): Promise<void> =>
+    api.post('/auth/forgot-password', { email }),
 
-  getReviews: async (productId: string): Promise<Review[]> => {
-    await delay(200)
-    return MOCK_REVIEWS[productId] ?? []
-  },
-
-  getOrders: async (): Promise<Order[]> => {
-    await delay()
-    return MOCK_ORDERS
-  },
-
-  getCropEffects: async (): Promise<CropEffect[]> => {
-    await delay()
-    return CROP_EFFECTS
-  },
-
-  loginWithEmail: async (_email: string, _password: string): Promise<User> => {
-    await delay(600)
-    return { id: 'u-1', name: '홍길동', email: _email, provider: 'email', membership: 'GOLD' }
+  loginWithEmail: async (email: string, password: string): Promise<User> => {
+    const res = await api.post<{ token: string; user: User }>('/auth/login', { email, password })
+    tokenStore.set(res.token)
+    return res.user
   },
 
   loginWithSocial: async (provider: SocialProvider): Promise<User> => {
-    await delay(600)
-    return { id: 'u-2', name: '소셜 사용자', email: `user@${provider}.test`, provider, membership: 'SILVER' }
+    const res = await api.post<{ token: string; user: User }>('/auth/social', { provider })
+    tokenStore.set(res.token)
+    return res.user
   },
 
-  checkout: async (
-    total: number,
-    _items: CartItem[],
-  ): Promise<{ orderId: string; total: number }> => {
-    await delay(800)
-    return { orderId: `ORD-${Date.now()}`, total }
+  logout: () => {
+    tokenStore.clear()
   },
+
+  confirmPayment: async (params: {
+    paymentKey: string
+    orderId: string
+    amount: number
+    items: CartItem[]
+    receiverName?: string
+    deliveryAddress?: string
+  }): Promise<{ orderId: string; total: number; paymentMethod: string }> => {
+    return api.post('/payments/confirm', {
+      paymentKey: params.paymentKey,
+      orderId: params.orderId,
+      amount: params.amount,
+      items: params.items.map((item) => ({
+        productId: item.productId,
+        optionLabel: item.optionLabel,
+        quantity: item.quantity,
+      })),
+      receiverName: params.receiverName,
+      deliveryAddress: params.deliveryAddress,
+    })
+  },
+
+  changePassword: (currentPassword: string, newPassword: string): Promise<void> =>
+    api.post('/auth/change-password', { currentPassword, newPassword }),
+
+  getAddresses: (): Promise<Address[]> => api.get('/addresses'),
+
+  addAddress: (data: Omit<Address, 'id'>): Promise<Address> =>
+    api.post('/addresses', data),
+
+  updateAddress: (id: string, data: Partial<Omit<Address, 'id'>>): Promise<Address> =>
+    api.post(`/addresses/${id}`, data),
+
+  deleteAddress: (id: string): Promise<void> =>
+    api.post(`/addresses/${id}/delete`, {}),
+
+  setDefaultAddress: (id: string): Promise<void> =>
+    api.post(`/addresses/${id}/default`, {}),
 
   applyCoupon: async (
     code: string,
     total: number,
   ): Promise<{ valid: boolean; discount: number; message: string }> => {
-    await delay(400)
-    if (code === 'FARM10') return { valid: true, discount: Math.floor(total * 0.1), message: '🌱 FARM10 쿠폰 적용! 10% 할인' }
-    if (code === 'GREEN5000') return { valid: true, discount: 5000, message: '✅ GREEN5000 쿠폰 적용! 5,000원 할인' }
-    return { valid: false, discount: 0, message: '유효하지 않은 쿠폰 코드입니다.' }
+    try {
+      return await api.post('/coupons/apply', { code, total })
+    } catch {
+      return { valid: false, discount: 0, message: '쿠폰 적용 중 오류가 발생했습니다.' }
+    }
   },
 }
