@@ -7,6 +7,7 @@ const store = useShopStore()
 const router = useRouter()
 
 const handleEmailLogin = async () => {
+  if (store.isLoading) return
   await store.loginEmail()
   router.push({ name: 'account' })
 }
@@ -24,7 +25,7 @@ const handleSocialLogin = async (provider: SocialProvider) => {
       <p class="mt-2 text-slate-500">목업 로그인입니다. 어떤 이메일/비밀번호든 로그인됩니다.</p>
       <div class="mt-6 space-y-3">
         <input v-model="store.email" class="input" type="email" placeholder="이메일" />
-        <input v-model="store.password" class="input" type="password" placeholder="비밀번호" />
+        <input v-model="store.password" class="input" type="password" placeholder="비밀번호" @keyup.enter="handleEmailLogin" />
         <button class="primary-btn w-full" :disabled="store.isLoading" @click="handleEmailLogin">로그인</button>
       </div>
       <div class="mt-5 flex justify-between text-sm font-bold text-brand-700">
